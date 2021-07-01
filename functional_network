@@ -208,3 +208,12 @@ cell2csv(['fosnet_matrix_' con '.csv'],origmat);
     
    
 end
+
+functional_network('wt_veh_no_pst_fos.csv')
+functional_network('wt_dfp_no_pst_fos.csv')
+functional_network('ko_veh_no_pst_fos.csv')
+functional_network('ko_dfp_no_pst_fos.csv')
+functional_network('wt_veh_pst_fos.csv')
+functional_network('wt_dfp_pst_fos.csv')
+functional_network('ko_veh_pst_fos.csv')
+functional_network('ko_dfp_pst_fos.csv')
