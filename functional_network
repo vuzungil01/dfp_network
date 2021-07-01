@@ -1,0 +1,210 @@
+function [fosnet] = functional_network(raw_fos_region)
+
+%% Load raw c-fos data for each condition individually
+
+region_fos = tdfread(raw_fos_region,',');
+region_fos_matrix = readmatrix(raw_fos_region);
+
+con = raw_fos_region(1:strfind(raw_fos_region,'.')-1);
+
+fosnet.nodelabels = fieldnames(region_fos);
+
+%% Calculate correlaton matrix for real matrix
+
+[fosnet.corr, fosnet.p] = corr(region_fos_matrix,'type','Pearson','rows','pairwise');
+fosnet.corr(eye(size(fosnet.corr,1))==1) = 0; % set diagonal values as zero for BTC
+
+%--- Selecting for positive correlation for analysis
+
+fosnet.thresh_low = 0.7887; % equivalent to p<0.01
+fosnet.thresh = 0.8343; % equivalent to p<0.005
+fosnet.thresh_high = 0.8697; % equivalent to p<0.0025
+fosnet.negative_thresh = -0.8343; % significant negative correlation
+
+fosnet.corr_positive = fosnet.corr;
+
+fosnet.corr_positive(fosnet.corr_positive<=0) = 0; % select for only positive correlation - create positive functional network
+
+writematrix(fosnet.corr,[con '_corr.csv']);
+
+%--- Calculate binary matrix by thresholding - circular graphs - informed
+%by fosnet.thresh
+
+fosnet.adjacency = fosnet.corr;
+fosnet.adjacency_negative = fosnet.corr;
+
+fosnet.adjacency(fosnet.adjacency<=fosnet.thresh) = 0;
+fosnet.adjacency(fosnet.adjacency>fosnet.thresh) = 1;
+
+fosnet.adjacency_negative(fosnet.adjacency_negative>fosnet.negative_thresh) = 0;
+fosnet.adjacency_negative(fosnet.adjacency_negative<=fosnet.negative_thresh) = 1;
+
+writematrix(fosnet.adjacency,[con '_adjacency.csv']);
+writematrix(fosnet.adjacency_negative,[con '_adjacency_negative.csv']);
+
+%---Binary matrix for low and high thresholds
+
+fosnet.low = fosnet.corr;
+
+fosnet.low(fosnet.low<=fosnet.thresh_low) = 0;
+fosnet.low(fosnet.low>fosnet.thresh_low) = 1;
+
+fosnet.high = fosnet.corr;
+
+fosnet.high(fosnet.high<=fosnet.thresh_high) = 0;
+fosnet.high(fosnet.high>fosnet.thresh_high) = 1;
+
+
+%% Calculate degrees for each node - at each 3 network strengths
+
+fosnet.degree = degrees_und(fosnet.adjacency); %p<0.005 -mid
+
+%--- Calculate 2 SD for the control mice to determine significant ROI which
+%could be hubs - only necessary for wt_veh
+
+fosnet.degree_mean = mean(fosnet.degree);
+fosnet.degree_std_deviation = 2*std(fosnet.degree);
+
+
+%--- Calculate 80% percentile for condition
+
+fosnet.percentile = quantile(fosnet.degree,0.8);
+
+fosnet.degree_range = fosnet.degree;
+
+fosnet.degree_range(fosnet.degree_range<=fosnet.percentile)=0;
+fosnet.degree_range(fosnet.degree_range>fosnet.percentile)=1;
+
+%--- Low strength
+
+fosnet.degree_low = degrees_und(fosnet.low); %p<0.01 - low
+
+%--- Calculate 2 SD for the control mice to determine significant ROI which
+%could be hubs - only necessary for wt_veh
+
+fosnet.degree_low_mean = mean(fosnet.degree_low);
+fosnet.degree_low_std_deviation = 2*std(fosnet.degree_low);
+
+
+%--- Calculate 80% percentile for condition
+
+fosnet.percentile_low = quantile(fosnet.degree_low,0.8);
+
+fosnet.degree_range_low = fosnet.degree_low;
+
+fosnet.degree_range_low(fosnet.degree_range_low<=fosnet.percentile_low)=0;
+fosnet.degree_range_low(fosnet.degree_range_low>fosnet.percentile_low)=1;
+
+%--- High strength
+
+fosnet.degree_high = degrees_und(fosnet.high); %p<0.0025 - low
+
+%--- Calculate 2 SD for the control mice to determine significant ROI which
+%could be hubs - only necessary for wt_veh
+
+fosnet.degree_high_mean = mean(fosnet.degree_high);
+fosnet.degree_high_std_deviation = 2*std(fosnet.degree_high);
+
+
+%--- Calculate 80% percentile for condition
+
+fosnet.percentile_high = quantile(fosnet.degree_high,0.8);
+
+fosnet.degree_range_high = fosnet.degree_high;
+
+fosnet.degree_range_high(fosnet.degree_range_high<=fosnet.percentile_high)=0;
+fosnet.degree_range_high(fosnet.degree_range_high>fosnet.percentile_high)=1;
+
+%% Calculate betweenness centrality
+
+fosnet.length = weight_conversion(fosnet.corr_positive, 'lengths'); % convert weighted correlation matrix to connection-length matrix
+fosnet.betweenness_centrality = betweenness_wei(fosnet.length);
+
+%---Convert betweenness centrality to fraction which is determined by the
+%total number of possible short paths
+
+fosnet.total_short_lengths = sum(fosnet.betweenness_centrality);
+fosnet.betweenness_centrality_fraction = fosnet.betweenness_centrality/fosnet.total_short_lengths;
+fosnet.betweenness_centrality_fraction = fosnet.betweenness_centrality_fraction*100;
+
+%--- Calculate 2 SD for the control mice to determine significant ROI which
+%could be hubs - only necessary for wt_veh
+
+fosnet.betweenness_centrality_mean = mean(fosnet.betweenness_centrality_fraction);
+fosnet.betweenness_centrality_std_deviation = 2*std(fosnet.betweenness_centrality_fraction);
+
+%--- Calculate 80% percentile for betweenness centrality
+
+fosnet.percentile_betweenness = quantile(fosnet.betweenness_centrality_fraction,0.8);
+
+fosnet.betweenness_range = fosnet.betweenness_centrality_fraction;
+
+fosnet.betweenness_range(fosnet.betweenness_range<=fosnet.percentile_betweenness)=0;
+fosnet.betweenness_range(fosnet.betweenness_range>fosnet.percentile_betweenness)=1;
+
+%% Community detection - modularity
+
+%---- Newman's spectral community detection
+
+fosnet.Ci = modularity_und(fosnet.corr);
+
+%% Calculate participation coefficent
+
+[fosnet.node_Ppos, fosnet.node_Pneg] = participation_coef_sign(fosnet.corr,fosnet.Ci);
+
+%% Calculate within module z-score
+
+fosnet.z_score = module_degree_zscore(fosnet.corr, fosnet.Ci);
+
+
+%% Formatted for plotting in R
+
+%--- Correlation matrix
+
+origmat = {'seed' 'target' 'connection' 'seed.module' 'target.module'};
+counter = 1;
+
+for i=1:size(fosnet.corr,1)
+    for j=1:size(fosnet.corr,2)
+        
+        counter = counter +1;
+        
+        origmat{counter,1} = fosnet.nodelabels{i};
+        origmat{counter,2} = fosnet.nodelabels{j};
+        origmat{counter,3} = fosnet.corr(i,j);
+        origmat{counter,4} = fosnet.Ci(i);
+        origmat{counter,5} = fosnet.Ci(j);
+        
+    end
+end
+
+cell2csv(['fosnet_matrix_' con '.csv'],origmat);
+
+%--- Save out mean participation coefficient & z-score
+
+ nodevals = {'metric' 'node' 'Ppos' 'Pneg' 'zscore' 'degree_primary' 'degree_primary_percentile' 'degree_low_percentile' 'degree_high_percentile' 'betweenness' 'betweenness_percentile'};
+ counter = 1;
+ metric = {'node_Ppos'};
+    
+ allvals = fosnet.(metric{1});
+ meanvals = mean(allvals,2);
+
+    for i=1:size(meanvals,1)
+        counter = counter + 1;
+        nodevals{counter,1} = metric{1};
+        nodevals{counter,2} = fosnet.nodelabels{i};
+        nodevals{counter,3} = fosnet.node_Ppos(i);
+        nodevals{counter,4} = fosnet.node_Pneg(i);
+        nodevals{counter,5} = fosnet.z_score(i);
+        nodevals{counter,6} = fosnet.degree(i);
+        nodevals{counter,7} = fosnet.degree_range(i);
+        nodevals{counter,8} = fosnet.degree_range_low(i);
+        nodevals{counter,9} = fosnet.degree_range_high(i);
+        nodevals{counter,10} = fosnet.betweenness_centrality_fraction(i);
+        nodevals{counter,11} = fosnet.betweenness_range(i);
+    end
+    
+    cell2csv(['fosnet_nodevals_' con '.csv'],nodevals);
+    
+   
+end
