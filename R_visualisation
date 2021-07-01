@@ -1,0 +1,207 @@
+library(ggplot2)
+library(reshape2)
+
+### Correlation heatmap
+
+fosnet_corr <- function (corr_data){
+  
+  corr <- read.csv(corr_data)
+  
+  con <- strsplit(corr_data,'.', fixed = TRUE)[[1]][1]
+  
+  # transpose the row so that the row order is reversed, necessary for the melt
+  
+  transpose <- corr[60:1,]
+  
+  # melt the correlation data to form melted correlation of regions and correlation
+  
+  melted_cormat <- melt(transpose)
+  head(melted_cormat)
+  
+  # rename value to correlation
+  
+  names(melted_cormat)[names(melted_cormat) == "value"] <- "Correlation"
+  
+  # convert the first row of melted correlation to factor, maintain order
+  
+  melted_cormat$X <- factor(melted_cormat$X, levels=unique(melted_cormat$X))
+  
+  
+  # correlation heatmap with region variables on both axis
+  
+  ggplot(data = melted_cormat, aes(x = variable, y = X)) + 
+    geom_tile(aes(fill=Correlation),colour =' white') + scale_fill_gradient2('Correlation', limits=c(-1, 1), breaks = c(-1, -0.5, 0, 0.5, 1),  low = "blue", mid = "white", high = "red") + 
+    scale_y_discrete(breaks=c("alC","VMHVL","MeAV","CeM","STLJ","DRC"),labels=c("10","20","30","40","50","60")) + 
+    scale_x_discrete(breaks=c("alC","VMHVL","MeAV","CeM","STLJ","DRC"),labels=c("10","20","30","40","50","60")) +
+    theme(axis.title = element_blank(), axis.ticks = element_blank())
+  
+  ggsave(paste0(con,'_heatmap.png'),device='png',width = 6, height = 3.80)
+  
+}
+
+fosnet_corr('wt_veh_no_pst_fos_corr.csv')
+fosnet_corr('wt_dfp_no_pst_fos_corr.csv')
+fosnet_corr('ko_veh_no_pst_fos_corr.csv')
+fosnet_corr('ko_dfp_no_pst_fos_corr.csv')
+fosnet_corr('wt_veh_pst_fos_corr.csv')
+fosnet_corr('wt_dfp_pst_fos_corr.csv')
+fosnet_corr('ko_veh_pst_fos_corr.csv')
+fosnet_corr('ko_dfp_pst_fos_corr.csv')
+
+
+### Circular graphs for correlation analysis
+
+install.packages("network")
+install.packages("sna")
+
+library(network)
+library(sna)
+
+
+install.packages("GGally")
+library(GGally)
+
+fosnet_circular <- function(adjacency_data){
+  
+  fosnet_adjacency <- read.csv(adjacency_data)
+  
+  con <- strsplit(adjacency_data,'.', fixed = TRUE)[[1]][1]
+  
+  net <- data.matrix(fosnet_adjacency)
+  
+  net = network(net, directed = FALSE,)
+  
+  ggnet2(net, mode = "circle", node.size = 6, node.color = "black", edge.size = 1, edge.color = "red", size = "degree", size.zero = TRUE)+
+    scale_size_manual("",values = c(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14))
+  
+  ggsave(paste0(con,'_circular_graph.png'),device='png',width = 8.40, height = 3.80)
+  
+  
+}
+
+fosnet_circular('wt_veh_no_pst_fos_adjacency.csv')
+fosnet_circular('wt_dfp_no_pst_fos_adjacency.csv')
+fosnet_circular('ko_veh_no_pst_fos_adjacency.csv')
+fosnet_circular('ko_dfp_no_pst_fos_adjacency.csv')
+fosnet_circular('wt_veh_pst_fos_adjacency.csv')
+fosnet_circular('wt_dfp_pst_fos_adjacency.csv')
+fosnet_circular('ko_veh_pst_fos_adjacency.csv')
+fosnet_circular('ko_dfp_pst_fos_adjacency.csv')
+
+fosnet_circular('wt_veh_no_pst_fos_adjacency_negative.csv')
+fosnet_circular('wt_dfp_no_pst_fos_adjacency_negative.csv')
+fosnet_circular('ko_veh_no_pst_fos_adjacency_negative.csv')
+fosnet_circular('ko_dfp_no_pst_fos_adjacency_negative.csv')
+fosnet_circular('wt_veh_pst_fos_adjacency_negative.csv')
+fosnet_circular('wt_dfp_pst_fos_adjacency_negative.csv')
+fosnet_circular('ko_veh_pst_fos_adjacency_negative.csv')
+fosnet_circular('ko_dfp_pst_fos_adjacency_negative.csv')
+
+### Getting data in the correct format for modular analysis
+
+install.packages("tidyverse")
+library(tidyverse)
+
+
+thresh <- .7 # arbitrary, just for visualization
+set.seed(5) # for reproducibility
+
+
+## Bar graph for degree and betweenness centrality
+
+hubs_bar <- function(nodevals){
+  
+  con <- strsplit(nodevals,'.', fixed = TRUE)[[1]][1]
+  con <-  substr(con, start =17, stop=nchar(con))
+  
+  nodevals <- read.csv(nodevals)
+  
+  percentile_degree <-
+    quantile(nodevals$degree_primary, probs = 0.8)
+  
+  percentile_betweenness <-
+    quantile(nodevals$betweenness, probs = 0.8)
+  
+  nodevals <- nodevals %>%
+    mutate(node.hub_degree = ifelse(degree_primary>percentile_degree, 'Hub','Not hub'),
+           node.hub_betweenness = ifelse(betweenness>percentile_betweenness, 'Hub', 'Not hub'))
+  
+  nodevals %>%
+    mutate(seed = node) %>%
+    mutate(node.ordered=reorder(node,degree_primary),
+           node.ordered=factor(node,levels=rev(levels(node.ordered)))) %>%
+    ggplot(aes(x=node.ordered,y=degree_primary)) + 
+    geom_bar(stat="identity",aes(color=node.hub_degree),fill="gray70") +
+    scale_color_manual(values=c("black","white")) +
+    scale_y_continuous(limits = c(0,15)) +
+    ylab('Degree') + 
+    ggtitle(paste0(con)) + 
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme_minimal() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, color="black")) +
+    xlab('') +
+    guides(color=FALSE)
+  
+  ggsave(paste0(con,'_degree_graph.png'),device='png',width = 8.40, height = 3.80)
+  
+  
+  nodevals %>%
+    mutate(seed = node) %>%
+    mutate(node.ordered=reorder(node,betweenness),
+           node.ordered=factor(node,levels=rev(levels(node.ordered)))) %>%
+    ggplot(aes(x=node.ordered,y=betweenness)) + 
+    geom_bar(stat="identity",aes(color=node.hub_betweenness),fill="gray70") +
+    scale_color_manual(values=c("black","white")) +
+    scale_y_continuous(limits = c(0,16)) +
+    ylab('Betweenness centrality') + 
+    ggtitle(paste0(con)) + 
+    theme(plot.title = element_text(hjust = 0.5)) +
+    theme_minimal() + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, color="black")) +
+    xlab('') +
+    guides(color=FALSE)
+  
+  ggsave(paste0(con,'_betweenness_centrality_graph.png'),device='png',width = 8.40, height = 3.80)
+}
+
+hubs_bar('fosnet_nodevals_wt_veh_no_pst_fos.csv')
+hubs_bar('fosnet_nodevals_wt_dfp_no_pst_fos.csv')
+hubs_bar('fosnet_nodevals_ko_veh_no_pst_fos.csv')
+hubs_bar('fosnet_nodevals_ko_dfp_no_pst_fos.csv')
+hubs_bar('fosnet_nodevals_wt_veh_pst_fos.csv')
+hubs_bar('fosnet_nodevals_wt_dfp_pst_fos.csv')
+hubs_bar('fosnet_nodevals_ko_veh_pst_fos.csv')
+hubs_bar('fosnet_nodevals_ko_dfp_pst_fos.csv')
+
+## Create scatterplot with z-score vs participation coefficient
+
+
+library(ggrepel)
+
+z_participation <- function(nodevals){
+  con <- strsplit(nodevals,'.', fixed = TRUE)[[1]][1]
+  con <-  substr(con, start =17, stop=nchar(con))
+  nodevals <- read.csv(nodevals)
+  
+  
+  nodevals <- nodevals %>%
+    mutate(node.hub= ifelse(degree_primary_percentile == 1 & degree_low_percentile == 1 & degree_high_percentile == 1 & betweenness_percentile == 1, 'Hub', 'Not hub')) 
+  
+  ggplot(nodevals,aes(x=Ppos,y=zscore)) + geom_point(colour='cyan2') + 
+    geom_point(data=nodevals[nodevals$node.hub == 'Hub',], colour='deeppink2', size=2) +
+    geom_text_repel(label=nodevals$node, size = 4) +
+    scale_y_continuous(limits = c(-4,4)) +
+    scale_x_continuous(limits = c(0,0.67))
+  
+  ggsave(paste0(con,'_z_participation_graph.png'),device='png',width = 8.40, height = 3.80)
+  
+}
+
+z_participation('fosnet_nodevals_wt_veh_no_pst_fos.csv')
+z_participation('fosnet_nodevals_wt_dfp_no_pst_fos.csv')
+z_participation('fosnet_nodevals_ko_veh_no_pst_fos.csv')
+z_participation('fosnet_nodevals_ko_dfp_no_pst_fos.csv')
+z_participation('fosnet_nodevals_wt_veh_pst_fos.csv')
+z_participation('fosnet_nodevals_wt_dfp_pst_fos.csv')
+z_participation('fosnet_nodevals_ko_veh_pst_fos.csv')
+z_participation('fosnet_nodevals_ko_dfp_pst_fos.csv')
